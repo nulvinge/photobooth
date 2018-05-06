@@ -111,6 +111,12 @@ class Camera_gPhoto:
         else:
             raise CameraException("No preview supported!")
 
+    def take_preview_buff(self):
+        if gphoto2cffi_enabled:
+            return self.cap.get_preview()
+        else:
+            raise CameraException("No preview supported!")
+
     def take_picture(self, filename="/tmp/picture.jpg"):
         if gphoto2cffi_enabled:
             self._save_picture(filename, self.cap.capture())

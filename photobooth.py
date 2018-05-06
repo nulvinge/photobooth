@@ -1,11 +1,14 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 # Created by br _at_ re-web _dot_ eu, 2015-2016
 
 import os
 from datetime import datetime
 from glob import glob
 from sys import exit
-from time import sleep, clock
+from time import sleep, time
+import cStringIO as StringIO
+import pygame
 
 from PIL import Image
 
@@ -20,7 +23,7 @@ from events import Rpi_GPIO as GPIO
 #####################
 
 # Screen size
-display_size = (1024, 600)
+display_size = (1366, 768)
 
 # Maximum size of assembled image
 image_size = (2352, 1568)
@@ -30,6 +33,7 @@ thumb_size = (1176, 784)
 
 # Image basename
 picture_basename = datetime.now().strftime("%Y-%m-%d/pic")
+print_basename = datetime.now().strftime("%Y-%m-%d-print/pic")
 
 # GPIO channel of switch to shutdown the Photobooth
 gpio_shutdown_channel = 24 # pin 18 in all Raspi-Versions
@@ -41,7 +45,9 @@ gpio_trigger_channel = 23 # pin 16 in all Raspi-Versions
 gpio_lamp_channel = 4 # pin 7 in all Raspi-Versions
 
 # Waiting time in seconds for posing
-pose_time = 3
+pose_time_first = 10
+# Waiting time in seconds for posing
+pose_time = -1
 
 # Display time for assembled picture
 display_time = 10
@@ -51,6 +57,8 @@ idle_slideshow = True
 
 # Display time of pictures in the slideshow
 slideshow_display_time = 5
+
+mode = 'L'
 
 ###############
 ### Classes ###
@@ -111,13 +119,17 @@ class Photobooth:
     It contains all the logic for the photobooth.
     """
 
-    def __init__(self, display_size, picture_basename, picture_size, pose_time, display_time,
-                 trigger_channel, shutdown_channel, lamp_channel, idle_slideshow, slideshow_display_time):
+    def __init__(self, display_size, picture_basename, picture_size,
+                 pose_time_first, pose_time, display_time, trigger_channel,
+                 shutdown_channel, lamp_channel, idle_slideshow,
+                 slideshow_display_time):
         self.display      = GuiModule('Photobooth', display_size)
         self.pictures     = PictureList(picture_basename)
+        self.prints       = PictureList(print_basename)
         self.camera       = CameraModule(picture_size)
 
         self.pic_size     = picture_size
+        self.pose_time_first = pose_time_first
         self.pose_time    = pose_time
         self.display_time = display_time
 
@@ -137,10 +149,10 @@ class Photobooth:
 
     def teardown(self):
         self.display.clear()
-        self.display.show_message("Shutting down...")
+        self.display.show_message(u"Stänger av...")
         self.display.apply()
         self.gpio.set_output(self.lamp_channel, 0)
-        sleep(0.5)
+        self.display.cancel_events()
         self.display.teardown()
         self.gpio.teardown()
         exit(0)
@@ -151,7 +163,8 @@ class Photobooth:
 
             # Display default message
             self.display.clear()
-            self.display.show_message("Hit the button!")
+            #self.display.show_message(u"Tryck på knappen!")
+            self.display.show_message(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
             self.display.apply()
 
             # Wait for an event and handle it
@@ -161,9 +174,10 @@ class Photobooth:
     def _run_slideshow(self):
         while True:
             self.camera.set_idle()
-            self.slideshow.display_next("Hit the button!")
-            tic = clock()
-            while clock() - tic < self.slideshow_display_time:
+            #self.slideshow.display_next(u"Tryck på knappen!")
+            self.slideshow.display_next(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
+            tic = time()
+            while time() - tic < self.slideshow_display_time:
                 self.check_and_handle_events()
 
     def run(self):
@@ -182,7 +196,7 @@ class Photobooth:
             except CameraException as e:
                 self.handle_exception(e.message)
             # Do not catch KeyboardInterrupt and SystemExit
-            except (KeyboardInterrupt, SystemExit):
+            except (KeyboardInterrupt): #, SystemExit):
                 raise
             except Exception as e:
                 print('SERIOUS ERROR: ' + repr(e))
@@ -216,6 +230,11 @@ class Photobooth:
         # Take pictures
         elif key == ord('c'):
             self.take_picture()
+            self.display.cancel_events()
+        # Preview
+        elif key == ord('u'):
+            self.show_preview(20, False)
+            self.display.cancel_events()
 
     def handle_mousebutton(self, key, pos):
         """Implements the actions for the different mousebutton events"""
@@ -234,12 +253,15 @@ class Photobooth:
         """Displays an error message and returns"""
         self.display.clear()
         print("Error: " + msg)
-        self.display.show_message("ERROR:\n\n" + msg)
+        self.display.show_message(u"FEL:\n\n" + msg)
+        #self.display.show_message(u"Avbryt      Skriv ut            \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
+        #self.display.show_message(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
         self.display.apply()
-        sleep(3)
+        self.display.cancel_events()
+        exit(1)
 
 
-    def assemble_pictures(self, input_filenames):
+    def assemble_pictures(self, input_filenames, size):
         """Assembles four pictures into a 2x2 grid
 
         It assumes, all original pictures have the same aspect ratio as
@@ -273,15 +295,15 @@ class Photobooth:
         """
 
         # Thumbnail size of pictures
-        outer_border = 50
+        outer_border = 40
         inner_border = 20
-        thumb_box = ( int( self.pic_size[0] / 2 ) ,
-                      int( self.pic_size[1] / 2 ) )
+        thumb_box = ( int( size[0] / 2 ) ,
+                      int( size[1] / 2 ) )
         thumb_size = ( thumb_box[0] - outer_border - inner_border ,
                        thumb_box[1] - outer_border - inner_border )
 
         # Create output image with white background
-        output_image = Image.new('RGB', self.pic_size, (255, 255, 255))
+        output_image = Image.new('RGB', size, (0, 0, 0))
 
         # Image 0
         img = Image.open(input_filenames[0])
@@ -311,28 +333,141 @@ class Photobooth:
                    thumb_box[1] + inner_border )
         output_image.paste(img, offset)
 
+        output_image = output_image.convert(mode)
+
         # Save assembled image
         output_filename = self.pictures.get_next()
         output_image.save(output_filename, "JPEG")
         return output_filename
 
-    def show_counter(self, seconds):
-        if self.camera.has_preview():
-            tic = clock()
-            toc = clock() - tic
-            while toc < seconds:
+    def assemble_print(self, input_filenames, size):
+        """Assembles four pictures into a 2x2 grid
+
+        It assumes, all original pictures have the same aspect ratio as
+        the resulting image.
+
+        For the thumbnail sizes we have:
+        h = (H - 2*a - 6*b) / 4
+        w = (W - 2*a - 2*b) / 2
+
+                                    W
+               |---------------------------------------|
+                   w0                w1
+          ---  +---+-------------+---+-------------+---+  ---
+           |   |                                       |   |  a
+           |   |   +-------------+   +-------------+   |  --- h0
+           |   |   |             |   |             |   |   |
+           |   |   |      0      |   |      0      |   |   |  h
+           |   |   |             |   |             |   |   |
+           |   |   +-------------+   +-------------+   |  ---
+           |   |                                       |   |  b
+           |   |   +-------------+   +-------------+   |  --- h1
+           |   |   |             |   |             |   |   |
+           |   |   |      1      |   |      1      |   |   |  h
+           |   |   |             |   |             |   |   |
+           |   |   +-------------+   +-------------+   |  ---
+         H |   |                                       |   |  b
+           |   |   +-------------+   +-------------+   |  --- h2
+           |   |   |             |   |             |   |   |
+           |   |   |      2      |   |      2      |   |   |  h
+           |   |   |             |   |             |   |   |
+           |   |   +-------------+   +-------------+   |  ---
+           |   |                                       |   |  b
+           |   |   +-------------+   +-------------+   |  --- h3
+           |   |   |             |   |             |   |   |
+           |   |   |      3      |   |      3      |   |   |  h
+           |   |   |             |   |             |   |   |
+           |   |   +-------------+   +-------------+   |  ---
+           |   |                                       |   |  a
+          ---  +---+-------------+---+-------------+---+  ---
+
+               |---|-------------|---|-------------|---|
+                 a        w        b        w        a
+        """
+
+        # Thumbnail size of pictures
+        outer_borderx = 0
+        outer_bordery = 110
+        inner_borderx = 20
+        inner_bordery = 10
+        thumb_size = ( int((size[0] - 2*outer_borderx - inner_borderx)/2) ,
+                       int((size[1] - 2*outer_bordery - 3*inner_bordery)/4) )
+        w = [outer_borderx
+            ,outer_borderx+thumb_size[0]+inner_borderx
+            ]
+        h = [outer_bordery
+            ,outer_bordery+1*(thumb_size[1]+inner_bordery)
+            ,outer_bordery+2*(thumb_size[1]+inner_bordery)
+            ,outer_bordery+3*(thumb_size[1]+inner_bordery)
+            ]
+
+        # Create output image with white background
+        output_image = Image.new('RGB', size, (255, 255, 255))
+
+        # Image 0
+        img = Image.open(input_filenames[0])
+        img.thumbnail(thumb_size, Image.ANTIALIAS)
+        output_image.paste(img, (w[0],h[0]))
+        output_image.paste(img, (w[1],h[0]))
+
+        # Image 1
+        img = Image.open(input_filenames[1])
+        img.thumbnail(thumb_size, Image.ANTIALIAS)
+        output_image.paste(img, (w[0],h[1]))
+        output_image.paste(img, (w[1],h[1]))
+
+        # Image 2
+        img = Image.open(input_filenames[2])
+        img.thumbnail(thumb_size, Image.ANTIALIAS)
+        output_image.paste(img, (w[0],h[2]))
+        output_image.paste(img, (w[1],h[2]))
+
+        # Image 3
+        img = Image.open(input_filenames[3])
+        img.thumbnail(thumb_size, Image.ANTIALIAS)
+        output_image.paste(img, (w[0],h[3]))
+        output_image.paste(img, (w[1],h[3]))
+
+        output_image = output_image.convert(mode)
+
+        # Save assembled image
+        output_filename = self.prints.get_next()
+        output_image.save(output_filename, "JPEG")
+        return output_filename
+
+    def show_preview(self, seconds, should_count=True):
+        secs = abs(seconds)
+        if secs == 1:
+            sleep(1)
+            self.display.cancel_events()
+        elif self.camera.has_preview() and not seconds < 0:
+            tic = time()
+            toc = time() - tic
+            while toc < secs:
                 self.display.clear()
-                self.camera.take_preview("/tmp/photobooth_preview.jpg")
-                self.display.show_picture("/tmp/photobooth_preview.jpg", flip=True) 
-                self.display.show_message(str(seconds - int(toc)))
+                buff = self.camera.take_preview_buff()
+                img = Image.open(StringIO.StringIO(buff))
+                img = img.convert(mode)
+                img = img.convert("RGB")
+                pygameimg = pygame.image.frombuffer(img.tobytes(), img.size, img.mode)
+                self.display.show_picture(image=pygameimg, flip=True) 
+                self.display.show_message(str(secs - int(toc)) + "                                    ")
+                if toc < 10 and not should_count:
+                    self.display.show_message(u"            Avbryt              \n            |                 \n            |                 \n            |                 \n            v                 \n")
+
                 self.display.apply()
 
                 # Limit progress to 1 "second" per preview (e.g., too slow on Raspi 1)
-                toc = min(toc + 1, clock() - tic)
+                toc = min(toc + 1, time() - tic)
+
+                r, e = self.display.check_for_event()
+                if not should_count and r and e.type == 1 and e.value == ord('u'):
+                    self.display.cancel_events()
+                    return
         else:
-            for i in range(seconds):
+            for i in range(secs):
                 self.display.clear()
-                self.display.show_message(str(seconds - i))
+                self.display.show_message(str(secs - i))
                 self.display.apply()
                 sleep(1)
 
@@ -343,19 +478,22 @@ class Photobooth:
 
         # Show pose message
         self.display.clear()
-        self.display.show_message("POSE!\n\nTaking four pictures...");
+        self.display.show_message(u"POSERA!\n\nTar fyra bilder...");
         self.display.apply()
         sleep(2)
 
         # Extract display and image sizes
-        size = self.display.get_size()
-        outsize = (int(size[0]/2), int(size[1]/2))
+        display_size = self.display.get_size()
+        outsize = (int(display_size[0]/2), int(display_size[1]/2))
 
         # Take pictures
         filenames = [i for i in range(4)]
         for x in range(4):
             # Countdown
-            self.show_counter(self.pose_time)
+            if x==0:
+                self.show_preview(self.pose_time_first)
+            else:
+                self.show_preview(self.pose_time)
 
             # Try each picture up to 3 times
             remaining_attempts = 3
@@ -363,10 +501,10 @@ class Photobooth:
                 remaining_attempts = remaining_attempts - 1
 
                 self.display.clear()
-                self.display.show_message("S M I L E !!!\n\n" + str(x+1) + " of 4")
+                self.display.show_message(u"OMELETT!!!\n\n" + str(x+1) + " av 4")
                 self.display.apply()
 
-                tic = clock()
+                tic = time()
 
                 try:
                     filenames[x] = self.camera.take_picture("/tmp/photobooth_%02d.jpg" % x)
@@ -385,28 +523,84 @@ class Photobooth:
                        raise e
 
                 # Measure used time and sleep a second if too fast 
-                toc = clock() - tic
+                toc = time() - tic
                 if toc < 1.0:
                     sleep(1.0 - toc)
 
         # Show 'Wait'
         self.display.clear()
-        self.display.show_message("Please wait!\n\nProcessing...")
+        self.display.show_message(u"Vänta!\n\nLaddar...")
         self.display.apply()
 
+        self.camera.set_idle()
+
         # Assemble them
-        outfile = self.assemble_pictures(filenames)
+        outfile = self.assemble_pictures(filenames, display_size)
 
         # Show pictures for 10 seconds
         self.display.clear()
-        self.display.show_picture(outfile, size, (0,0))
+        self.display.show_picture(outfile, display_size, (0,0))
         self.display.apply()
-        sleep(self.display_time)
+        sleep(2)
+
+        self.display.clear()
+        self.display.show_picture(outfile, display_size, (0,0))
+        self.display.show_message(u"Skriv ut    Avbryt              \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
+        self.display.apply()
+        self.run_after(filenames)
+
+        #self.display.clear()
+        #self.display.show_picture(outfile, display_size, (0,0))
+        #self.display.show_message(u"Laddar upp")
+        #self.display.apply()
+        #self.upload(filenames)
 
         # Reenable lamp
         self.gpio.set_output(self.lamp_channel, 1)
 
+    def run_after(self,filenames):
+        while True:
+            event = self.display.wait_for_event()
+            if not self.handle_event_after(event,filenames):
+                return
 
+    def handle_event_after(self, event, filesnames):
+        if event.type == 0:
+            self.teardown()
+        elif event.type == 1:
+            key = event.value
+            if key == ord('q'):
+                self.teardown()
+            elif key == ord('u'):
+                self.display.cancel_events()
+                return False
+            elif key == ord('c'):
+                self.print_out(filesnames)
+                self.display.cancel_events()
+                return False
+        return True
+
+    def print_out(self, filenames):
+        display_size = self.display.get_size()
+
+        # Show 'Wait'
+        self.display.clear()
+        self.display.show_message(u"Vänta!\n\nLaddar...")
+        self.display.apply()
+
+        # Assemble them
+        outfile = self.assemble_print(filenames, (self.pic_size[1],self.pic_size[0]))
+
+        # Show pictures for 10 seconds
+        self.display.clear()
+        self.display.show_picture(outfile, display_size, (0,0))
+        self.display.show_message(u"Vänta!\n\nSkriver ut...")
+        self.display.apply()
+
+        os.system("lp -o fit-to-page %s" % outfile)
+
+    def upload(self, filenames):
+        sleep(10)
 
 
 #################
@@ -414,8 +608,10 @@ class Photobooth:
 #################
 
 def main():
-    photobooth = Photobooth(display_size, picture_basename, image_size, pose_time, display_time, 
-                            gpio_trigger_channel, gpio_shutdown_channel, gpio_lamp_channel, 
+    photobooth = Photobooth(display_size, picture_basename, image_size,
+                            pose_time_first, pose_time, display_time, 
+                            gpio_trigger_channel, gpio_shutdown_channel,
+                            gpio_lamp_channel, 
                             idle_slideshow, slideshow_display_time)
     photobooth.run()
     photobooth.teardown()

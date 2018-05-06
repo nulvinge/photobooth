@@ -4,6 +4,7 @@
 from __future__ import division
 
 import pygame
+from time import sleep
 
 try:
     import pygame.fastevent as EventModule
@@ -54,13 +55,14 @@ class GUI_PyGame:
     def trigger_event(self, event_channel):
         EventModule.post(EventModule.Event(pygame.USEREVENT, channel=event_channel))
 
-    def show_picture(self, filename, size=(0,0), offset=(0,0), flip=False):
+    def show_picture(self, filename="No file", size=(0,0), offset=(0,0), flip=False, image=None):
         # Use window size if none given
         if size == (0,0):
             size = self.size
         try:
             # Load image from file
-            image = pygame.image.load(filename)
+            if not image:
+                image = pygame.image.load(filename)
         except pygame.error as e:
             raise GuiException("ERROR: Can't open image '" + filename + "': " + e.message)
         # Extract image size and determine scaling
@@ -240,6 +242,11 @@ class GUI_PyGame:
             r, e = self.convert_event(event)
             if r:
                 return e
+
+    def cancel_events(self):
+        sleep(0.5)
+        for event in EventModule.get():
+            pass
 
     def teardown(self):
         pygame.quit()
