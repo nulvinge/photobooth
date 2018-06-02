@@ -8,14 +8,18 @@
 #  sudo python set-time.py
 #fi
 
-while true;
-do
+rm photobooth.log
+rm photobooth.err
+
+#while true;
+#do
+    service bluetooth restart
     python photobooth.py >>photobooth.log 2>>photobooth.err
-    if [ $? -eq 0 ]; then
-        break
-    fi
-    sleep 3
-done
+#    if [ $? -eq 0 ]; then
+#        break
+#    fi
+#    sleep 3
+#done
 
 #cd -
 

@@ -22,6 +22,11 @@ class GUI_PyGame:
     def __init__(self, name, size, hide_mouse=True):
         # Call init routines
         pygame.init()
+
+        # Store screen and size
+        self.size = size
+        self.screen = pygame.display.set_mode(size, pygame.FULLSCREEN)
+
         if hasattr(EventModule, 'init'):
             EventModule.init()
 
@@ -31,10 +36,6 @@ class GUI_PyGame:
         # Hide mouse cursor
         if hide_mouse:
             pygame.mouse.set_cursor(*pygame.cursors.load_xbm('transparent.xbm','transparent.msk'))
-
-        # Store screen and size
-        self.size = size
-        self.screen = pygame.display.set_mode(size, pygame.FULLSCREEN)
 
         # Clear screen
         self.clear()

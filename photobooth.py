@@ -3,6 +3,7 @@
 # Created by br _at_ re-web _dot_ eu, 2015-2016
 
 import os
+import traceback
 from datetime import datetime
 from glob import glob
 from sys import exit
@@ -10,13 +11,14 @@ from time import sleep, time
 import cStringIO as StringIO
 import pygame
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 from gui import GUI_PyGame as GuiModule
 # from camera import CameraException, Camera_cv as CameraModule
 from camera import CameraException, Camera_gPhoto as CameraModule
 from slideshow import Slideshow
 from events import Rpi_GPIO as GPIO
+from btmon import BTMon
 
 #####################
 ### Configuration ###
@@ -59,6 +61,10 @@ idle_slideshow = True
 slideshow_display_time = 5
 
 mode = 'L'
+
+btaddr1 = "FF:FF:80:00:76:85"
+btaddr2 = "FF:FF:C3:0D:93:BB"
+
 
 ###############
 ### Classes ###
@@ -146,6 +152,8 @@ class Photobooth:
         input_channels    = [ trigger_channel, shutdown_channel ]
         output_channels   = [ lamp_channel ]
         self.gpio         = GPIO(self.handle_gpio, input_channels, output_channels)
+        self.bt1          = BTMon(btaddr1, 1, self.handle_bt)
+        self.bt2          = BTMon(btaddr2, 2, self.handle_bt)
 
     def teardown(self):
         self.display.clear()
@@ -200,6 +208,7 @@ class Photobooth:
                 raise
             except Exception as e:
                 print('SERIOUS ERROR: ' + repr(e))
+                traceback.print_exc();
                 self.handle_exception("SERIOUS ERROR!")
 
     def check_and_handle_events(self):
@@ -212,42 +221,40 @@ class Photobooth:
         if channel in [ self.trigger_channel, self.shutdown_channel ]:
             self.display.trigger_event(channel)
 
-    def handle_event(self, event):
-        if event.type == 0:
-            self.teardown()
-        elif event.type == 1:
-            self.handle_keypress(event.value)
-        elif event.type == 2:
-            self.handle_mousebutton(event.value[0], event.value[1])
-        elif event.type == 3:
-            self.handle_gpio_event(event.value)
+    def handle_bt(self, channel):
+        self.display.trigger_event(channel)
 
-    def handle_keypress(self, key):
-        """Implements the actions for the different keypress events"""
-        # Exit the application
-        if key == ord('q'):
+    def convert_event(self, event):
+        if event.type == 0:
+            return 0
+        elif event.type == 1:
+            if key == ord('q'):
+                return 0
+            elif key == ord('c'):
+                return 1
+            elif key == ord('u'):
+                return 2
+        elif event.type == 2:
+            if event.value[0] == 1:
+                return 1
+        elif event.type == 3:
+            if event.value == 1:
+                return 1
+            if event.value == 2:
+                return 2
+        return -1
+
+    def handle_event(self, event):
+        code = self.convert_event(event)
+        if code == 0:
             self.teardown()
-        # Take pictures
-        elif key == ord('c'):
+        elif code == 1:
+            # Take pictures
             self.take_picture()
             self.display.cancel_events()
-        # Preview
-        elif key == ord('u'):
+        elif code == 2:
             self.show_preview(20, False)
             self.display.cancel_events()
-
-    def handle_mousebutton(self, key, pos):
-        """Implements the actions for the different mousebutton events"""
-        # Take a picture
-        if key == 1:
-            self.take_picture()
-
-    def handle_gpio_event(self, channel):
-        """Implements the actions taken for a GPIO event"""
-        if channel == self.trigger_channel:
-            self.take_picture()
-        elif channel == self.shutdown_channel:
-            self.teardown()
 
     def handle_exception(self, msg):
         """Displays an error message and returns"""
@@ -428,7 +435,22 @@ class Photobooth:
         output_image.paste(img, (w[0],h[3]))
         output_image.paste(img, (w[1],h[3]))
 
+        output_image.paste(img, (w[1],h[3]))
+
         output_image = output_image.convert(mode)
+
+        # Text
+        draw = ImageDraw.Draw(output_image)
+        font = ImageFont.truetype("/usr/share/fonts/truetype/freefont/FreeSans.ttf", 80, encoding="unic")
+
+        def drawTextCentered(x, y, W, text):
+            w, h = font.getsize(text)
+            draw.text((x+(W-w)/2,y), text, "black", font)
+        drawTextCentered(0, 0, thumb_size[0], "Ylva & Simon")
+        drawTextCentered(w[1], 0, thumb_size[0], "Ylva & Simon")
+        bottom = outer_bordery+4*(thumb_size[1]+inner_bordery)
+        drawTextCentered(0, bottom, thumb_size[0], "2018-06-09")
+        drawTextCentered(w[1], bottom, thumb_size[0], "2018-06-09")
 
         # Save assembled image
         output_filename = self.prints.get_next()
@@ -461,7 +483,7 @@ class Photobooth:
                 toc = min(toc + 1, time() - tic)
 
                 r, e = self.display.check_for_event()
-                if not should_count and r and e.type == 1 and e.value == ord('u'):
+                if not should_count and r and self.convert_event(e) == 2:
                     self.display.cancel_events()
                     return
         else:
@@ -565,19 +587,17 @@ class Photobooth:
                 return
 
     def handle_event_after(self, event, filesnames):
-        if event.type == 0:
+        code = self.convert_event(event)
+        if code == 0:
             self.teardown()
-        elif event.type == 1:
-            key = event.value
-            if key == ord('q'):
-                self.teardown()
-            elif key == ord('u'):
-                self.display.cancel_events()
-                return False
-            elif key == ord('c'):
-                self.print_out(filesnames)
-                self.display.cancel_events()
-                return False
+        elif code == 1:
+            self.print_out(filesnames)
+            self.display.cancel_events()
+            return False
+        elif code == 2:
+            self.display.cancel_events()
+            return False
+
         return True
 
     def print_out(self, filenames):
@@ -598,6 +618,7 @@ class Photobooth:
         self.display.apply()
 
         os.system("lp -o fit-to-page %s" % outfile)
+        sleep(10)
 
     def upload(self, filenames):
         sleep(10)

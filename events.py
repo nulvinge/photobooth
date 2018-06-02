@@ -3,10 +3,15 @@
 
 try:
     import RPi.GPIO as GPIO
-    gpio_enabled = True
+    gpio_enabled = False
 except ImportError:
     gpio_enabled = False
 
+try:
+    from btmon import BTMon
+    bt_enabled = False
+except ImportError:
+    bt_enabled = False
 
 class Event:
     def __init__(self, type, value):
@@ -14,6 +19,7 @@ class Event:
                  1: keystroke 
                  2: mouseclick
                  3: gpio
+                 4: bt
         """
         self.type = type
         self.value = value
