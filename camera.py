@@ -2,6 +2,7 @@
 # Created by br@re-web.eu, 2015
 
 import subprocess
+from time import sleep
 
 cv_enabled = False
 gphoto2cffi_enabled = False
@@ -127,6 +128,7 @@ class Camera_gPhoto:
         return filename
 
     def _save_picture(self, filename, data):
+        sleep(0.01)
         f = open(filename, 'wb')
         f.write(data)
         f.close()

@@ -71,13 +71,15 @@ class Slideshow:
         if key == ord('q'):
             self.teardown()
 
-    def display_next(self, text=""):
+    def display_next(self, text="", text2=""):
         if self.next >= len(self.filelist):
             self.scan()
         if not self.filelist:
             self.display.clear()
             if text:
                 self.display.show_message(text)
+            if text2:
+                self.display.show_message(text2,color=(255,0,0))
             else:
                 self.display.show_message("No pictures available!")
             self.display.apply()
@@ -88,6 +90,8 @@ class Slideshow:
             self.display.show_picture(filename)
             if text:
                 self.display.show_message(text)
+            if text2:
+                self.display.show_message(text2,color=(255,0,0))
             self.display.apply()
 
     def run(self):

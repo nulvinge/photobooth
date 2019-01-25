@@ -25,7 +25,7 @@ from btmon import BTMon
 #####################
 
 # Screen size
-display_size = (1366, 768)
+display_size = (1680, 1050)
 
 # Maximum size of assembled image
 image_size = (2352, 1568)
@@ -172,7 +172,9 @@ class Photobooth:
             # Display default message
             self.display.clear()
             #self.display.show_message(u"Tryck på knappen!")
-            self.display.show_message(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
+            self.display.show_message(u"                    Ta bild\n\n\n\n\n\n\n\n\n", color=(255,0,0))
+            self.display.show_message(u"\n\n\n\n\n\n\n\nPreview                   ")
+            #self.display.show_message(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n    v       v                 \n   R        S                 \n")
             self.display.apply()
 
             # Wait for an event and handle it
@@ -183,7 +185,9 @@ class Photobooth:
         while True:
             self.camera.set_idle()
             #self.slideshow.display_next(u"Tryck på knappen!")
-            self.slideshow.display_next(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
+            #self.slideshow.display_next(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n   v         v                 \n   R        S                 \n")
+            self.slideshow.display_next(u"\n\n\n\n\n\n\n\nPreview                   "
+                                       ,u"                    Ta bild\n\n\n\n\n\n\n\n\n")
             tic = time()
             while time() - tic < self.slideshow_display_time:
                 self.check_and_handle_events()
@@ -228,11 +232,16 @@ class Photobooth:
         if event.type == 0:
             return 0
         elif event.type == 1:
+            key = event.value
             if key == ord('q'):
                 return 0
             elif key == ord('c'):
                 return 1
             elif key == ord('u'):
+                return 2
+            elif key == ord('r'):
+                return 1
+            elif key == ord('s'):
                 return 2
         elif event.type == 2:
             if event.value[0] == 1:
@@ -261,8 +270,6 @@ class Photobooth:
         self.display.clear()
         print("Error: " + msg)
         self.display.show_message(u"FEL:\n\n" + msg)
-        #self.display.show_message(u"Avbryt      Skriv ut            \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
-        #self.display.show_message(u"Ta bild       Preview           \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
         self.display.apply()
         self.display.cancel_events()
         exit(1)
@@ -344,7 +351,9 @@ class Photobooth:
 
         # Save assembled image
         output_filename = self.pictures.get_next()
+        sleep(0.01)
         output_image.save(output_filename, "JPEG")
+        sleep(0.01)
         return output_filename
 
     def assemble_print(self, input_filenames, size):
@@ -435,8 +444,7 @@ class Photobooth:
         output_image.paste(img, (w[0],h[3]))
         output_image.paste(img, (w[1],h[3]))
 
-        output_image.paste(img, (w[1],h[3]))
-
+        sleep(0.01)
         output_image = output_image.convert(mode)
 
         # Text
@@ -446,15 +454,17 @@ class Photobooth:
         def drawTextCentered(x, y, W, text):
             w, h = font.getsize(text)
             draw.text((x+(W-w)/2,y), text, "black", font)
-        drawTextCentered(0, 0, thumb_size[0], "Ylva & Simon")
-        drawTextCentered(w[1], 0, thumb_size[0], "Ylva & Simon")
-        bottom = outer_bordery+4*(thumb_size[1]+inner_bordery)
-        drawTextCentered(0, bottom, thumb_size[0], "2018-06-09")
-        drawTextCentered(w[1], bottom, thumb_size[0], "2018-06-09")
+        #drawTextCentered(0, 0, thumb_size[0], "Ylva & Simon")
+        #drawTextCentered(w[1], 0, thumb_size[0], "Ylva & Simon")
+        #bottom = outer_bordery+4*(thumb_size[1]+inner_bordery)
+        #drawTextCentered(0, bottom, thumb_size[0], "2018-06-09")
+        #drawTextCentered(w[1], bottom, thumb_size[0], "2018-06-09")
 
         # Save assembled image
+        sleep(0.01)
         output_filename = self.prints.get_next()
         output_image.save(output_filename, "JPEG")
+        sleep(0.01)
         return output_filename
 
     def show_preview(self, seconds, should_count=True):
@@ -469,15 +479,17 @@ class Photobooth:
                 self.display.clear()
                 buff = self.camera.take_preview_buff()
                 img = Image.open(StringIO.StringIO(buff))
+                sleep(0.01)
                 img = img.convert(mode)
                 img = img.convert("RGB")
                 pygameimg = pygame.image.frombuffer(img.tobytes(), img.size, img.mode)
                 self.display.show_picture(image=pygameimg, flip=True) 
                 self.display.show_message(str(secs - int(toc)) + "                                    ")
                 if toc < 10 and not should_count:
-                    self.display.show_message(u"            Avbryt              \n            |                 \n            |                 \n            |                 \n            v                 \n")
+                    self.display.show_message(u"\n\n\n\n\n\n\n\nAvbryt                    ")
 
                 self.display.apply()
+                sleep(0.01)
 
                 # Limit progress to 1 "second" per preview (e.g., too slow on Raspi 1)
                 toc = min(toc + 1, time() - tic)
@@ -485,10 +497,12 @@ class Photobooth:
                 r, e = self.display.check_for_event()
                 if not should_count and r and self.convert_event(e) == 2:
                     self.display.cancel_events()
+                    sleep(0.01)
                     return
         else:
             for i in range(secs):
                 self.display.clear()
+                sleep(0.01)
                 self.display.show_message(str(secs - i))
                 self.display.apply()
                 sleep(1)
@@ -553,21 +567,25 @@ class Photobooth:
         self.display.clear()
         self.display.show_message(u"Vänta!\n\nLaddar...")
         self.display.apply()
+        sleep(0.01)
 
         self.camera.set_idle()
+        sleep(0.01)
 
         # Assemble them
         outfile = self.assemble_pictures(filenames, display_size)
+        sleep(0.01)
 
         # Show pictures for 10 seconds
         self.display.clear()
         self.display.show_picture(outfile, display_size, (0,0))
         self.display.apply()
-        sleep(2)
+        sleep(0.01)
 
         self.display.clear()
         self.display.show_picture(outfile, display_size, (0,0))
-        self.display.show_message(u"Skriv ut    Avbryt              \n   |         |                 \n   |         |                 \n   |         |                 \n   v        v                 \n")
+        self.display.show_message(u"                    Skriv ut\n\n\n\n\n\n\n\n\n", color=(255,0,0))
+        self.display.show_message(u"\n\n\n\n\n\n\n\nAvbryt                 ")
         self.display.apply()
         self.run_after(filenames)
 
@@ -607,15 +625,18 @@ class Photobooth:
         self.display.clear()
         self.display.show_message(u"Vänta!\n\nLaddar...")
         self.display.apply()
+        sleep(0.01)
 
         # Assemble them
         outfile = self.assemble_print(filenames, (self.pic_size[1],self.pic_size[0]))
+        sleep(0.01)
 
         # Show pictures for 10 seconds
         self.display.clear()
         self.display.show_picture(outfile, display_size, (0,0))
         self.display.show_message(u"Vänta!\n\nSkriver ut...")
         self.display.apply()
+        sleep(0.01)
 
         os.system("lp -o fit-to-page %s" % outfile)
         sleep(10)
